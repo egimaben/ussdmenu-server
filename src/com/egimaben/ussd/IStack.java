@@ -1,4 +1,4 @@
-package com.egima.ussdmenuserver;
+package com.egimaben.ussd;
 
 import java.util.ArrayDeque;
 import java.util.Deque;

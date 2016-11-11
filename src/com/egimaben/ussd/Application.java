@@ -1,4 +1,4 @@
-package com.egima.ussdmenuserver;
+package com.egimaben.ussd;
 
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
@@ -19,15 +19,14 @@ public class Application {
 	public static String DELIM = ",";
 	public static final int USSD_CHAR_LIMIT = 160;
 	public static final String SEP = System.getProperty("line.separator");
-	public static HashMap<String, Object> userData = new HashMap<>();
 	public static String APP_PASSWORD = "password";
-	public static HashMap<String, UssdUserSession> userSessions = new HashMap<>();;
+	public static HashMap<String, UssdUserSession> userSessions = new HashMap<>();
 	public static Map<String, Double> ODDS = new HashMap<>();
 	private static final Logger LOGGER = LoggerFactory
 			.getLogger(Application.class);
 
-	public void log(String str) {
-		LOGGER.info( str);
+	public static void log(String str) {
+		LOGGER.info(str);
 	}
 
 	public static String getError(String code) {
@@ -72,11 +71,12 @@ public class Application {
 		return false;
 	}
 
-	public static String replaceVars(String message) {
+	public static String replaceVars(String message, String address) {
 		String edited = message;
-		int count = 0;
+		log("replacing vars: " + message);
+		Map<String, Object> userData = userSessions.get(address)
+				.getAllUserData();
 		while (edited.contains("$") || edited.contains("%")) {
-			count++;
 			if (edited.contains("$")) {
 				String original = "";
 				int index = edited.indexOf("$");
@@ -120,15 +120,13 @@ public class Application {
 						else
 							val = arr[arr.length - 1];
 					} else
-						val = (String) userData.get(finalz);
+						val = String.valueOf(userData.get(finalz));
 
 					String matcher = java.util.regex.Matcher
 							.quoteReplacement(original);
 					edited = edited.replaceAll(matcher, val);
 				}
 			}
-			if (count == 10)
-				break;
 		}
 		return edited;
 
@@ -143,9 +141,13 @@ public class Application {
 		return sum;
 	}
 
-	public static String replaceTitleVars(String message,String address) {
+	public static String replaceTitleVars(String message, String address) {
 		String edited = message;
+		Map<String, Object> userData = userSessions.get(address)
+				.getAllUserData();
+
 		while (edited.contains("$") || edited.contains("%")) {
+			log("recursing substitution of vars");
 			if (edited.contains("$")) {
 				String original = "";
 				int index = edited.indexOf("$");
@@ -173,9 +175,12 @@ public class Application {
 				String original = edited.substring(index, endIndex + 1);
 				int finIndex = original.indexOf("@");
 				String finalz = original.substring(1, finIndex);
+				log("in replacing title vars, got final="+finalz);
 				finalz = isCommand(original) ? original.split("_")[1] : finalz;
+				log("after checking if is command,it's called: "+finalz);
 				if (userData.containsKey(finalz)) {
 					Object o = userData.get(finalz);
+					log("found it's value in storage: "+o);
 					String val = null;
 					if (o instanceof String[]) {
 						String[] arr = (String[]) o;
@@ -187,12 +192,25 @@ public class Application {
 						else
 							val = arr[arr.length - 1];
 					} else
-						val = (String) userData.get(finalz);
-					String title = original.contains("COUNT") ? val : userSessions.get(address).getMyTree()
-							.getNode(val).getTitle();
+						val = String.valueOf(o);
+//					String title = original.contains("COUNT") ? val
+//							: userSessions.get(address).getMyTree()
+//									.getNode(val).getTitle();
 					String matcher = java.util.regex.Matcher
 							.quoteReplacement(original);
-					edited = edited.replaceAll(matcher, title);
+					edited = edited.replaceAll(matcher, val);
+				}
+				if (isFunction(finalz)) {
+					if (finalz.startsWith("PERCENT")) {
+						finalz = finalz.replaceAll("PERCENT", "")
+								.replaceAll("(", "").replaceAll(")", "");
+						String[] params = finalz.split(",");
+						String percent = calcPercent(params[0], params[1],
+								userData);
+						String matcher = java.util.regex.Matcher
+								.quoteReplacement(original);
+						edited = edited.replaceAll(matcher, percent);
+					}
 				}
 
 			}
@@ -201,12 +219,30 @@ public class Application {
 		return edited;
 	}
 
+	private static boolean isFunction(String str) {
+		return str.contains("(") && str.contains(")");
+	}
+
+	private static String calcPercent(String operand, String percent,
+			Map<String, Object> userData) {
+		String strVal = null;
+		double op = toDbl(operand);
+		double perc = toDbl(percent);
+		if (op == -1)
+			op = toDbl(userData.get(operand));
+		if (perc == -1)
+			perc = toDbl(userData.get(percent));
+		double finalVal = op * perc;
+		strVal = String.valueOf(finalVal);
+		return strVal;
+	}
+
 	public static boolean isCommand(String nodeName) {
 		return nodeName.charAt(0) == '%' && nodeName.contains("_");
 	}
 
 	public static String formatCash(double cash) {
-		DecimalFormat df = new DecimalFormat("###,###,###.##");
+		DecimalFormat df = new DecimalFormat("### ### ###.##");
 		df.setRoundingMode(RoundingMode.CEILING);
 		return df.format(cash);
 	}
@@ -220,12 +256,6 @@ public class Application {
 		String[] arr = new String[input.length - 1];
 		arr = result.toArray(new String[1]);
 		return arr;
-	}
-
-	public static void main(String[] args) {
-		String str = "Enter Amount No. of Games:%COUNT_leagues@ Total ration:%SUM_odds@";
-		str = replaceVars(str);
-		System.out.println("final=" + str);
 	}
 
 }

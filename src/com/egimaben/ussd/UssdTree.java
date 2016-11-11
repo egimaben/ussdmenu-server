@@ -1,4 +1,4 @@
-package com.egima.ussdmenuserver;
+package com.egimaben.ussd;
 
 import java.util.HashMap;
 
@@ -23,7 +23,7 @@ public class UssdTree implements Cloneable {
 	}
 
 	private String notReadyMessage = "Application not ready, try again later";
-	private String address=null;
+	private String address = null;
 
 	public String getNotReadyMessage() {
 		return notReadyMessage;
@@ -53,9 +53,9 @@ public class UssdTree implements Cloneable {
 	 * @param treeHeader
 	 *            the heading of the menu tree e.g. Welcome to mBank
 	 */
-	public UssdTree(String treeHeader,String address) {
-		this.address=address;
-		addNode( new UssdNode(treeHeader, "root", "0"));
+	public UssdTree(String treeHeader, String address) {
+		this.address = address;
+		addNode(new UssdNode(treeHeader, "root", "0"));
 	}
 
 	/**
@@ -64,13 +64,22 @@ public class UssdTree implements Cloneable {
 	 * @param nodes
 	 */
 	public void addNode(UssdNode... nodes) {
-		
+		if (nodes == null)
+			return;
+
 		for (UssdNode node : nodes) {
 			node.setAddress(address);
 			treeMenu.put(node.getName(), node);
+			log("adding node:"+node.getName());
 			String parent = node.getParent();
-			if (treeMenu.containsKey(parent))
+			log("parent is:"+parent);
+			log("checking if this parent is already in the system");
+			log("parents in the system:"+treeMenu.keySet());
+			if (treeMenu.containsKey(parent)){
+				log("yes got parent in the system, adding child to parent");
+				
 				treeMenu.get(parent).addChild(node.getName());
+				}
 		}
 
 	}
@@ -82,8 +91,11 @@ public class UssdTree implements Cloneable {
 	 * @return
 	 */
 	public UssdNode getNode(String name) {
+		log("getting node named: "+name);
+		log("menu tree keys: "+treeMenu.keySet());
 		UssdNode node = treeMenu.get(name);
 		node.releaseObject();
+		log("returning node");
 		return node;
 	}
 

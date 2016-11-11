@@ -1,4 +1,4 @@
-package com.egima.ussdmenuserver;
+package com.egimaben.ussd;
 
 import hms.sdp.ussd.MchoiceUssdException;
 import hms.sdp.ussd.MchoiceUssdMessage;
@@ -16,6 +16,10 @@ import javax.servlet.ServletException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.egimaben.ussd.dto.USSDRequest;
+import com.egimaben.ussd.dto.USSDResponse;
+import com.egimaben.ussd.dto.USSDResponse.ACTION;
 
 /**
  * an abstract servlet class to receive client requests, process them and return
@@ -113,8 +117,6 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 				Application.ussdCode = shortCode;
 			ussdSender = new MchoiceUssdSender(Application.CLIENT_URL,
 					Application.APP_ID, Application.APP_PASSWORD);
-			// Application.tree = initBettingMenu();
-
 		} catch (MchoiceUssdException e) {
 			e.printStackTrace();
 		}
@@ -139,6 +141,7 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 		boolean validInput = (boolean) validationResult;
 		log(validInput ? "request is valid" : "request is invalid");
 		if (validInput) {
+			log("going to decide whether new request or continuation");
 			if (isContinuation(address)) {
 				UssdAoRequestMessage result = handleContinuingRequests(address,
 						message, convId);
@@ -153,6 +156,55 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 		// return null;
 	}
 
+	public USSDResponse onLiveMessage(USSDRequest request) {
+		String address = request.getMSISDN();
+		String message = request.getUSSDRequestString();
+		String convId = request.getTransactionId();
+		log("incoming live request, address:" + address + ",message:" + message
+				+ ",conversation ID:" + convId);
+		Object validationResult = validateRequest(address, message, convId);
+		if (validationResult instanceof UssdAoRequestMessage) {
+			UssdAoRequestMessage result = (UssdAoRequestMessage) validationResult;
+			USSDResponse resp = new USSDResponse();
+			resp.setTransactionId(result.getConversationId());
+			resp.setTransactionTime(request.getTransactionTime());
+			resp.setUSSDResponseString(result.getMessage());
+
+			resp.setUSSDAction(result.getSessionTermination() ? ACTION.END
+					: ACTION.REQUEST);
+
+			return resp;
+		}
+		boolean validInput = (boolean) validationResult;
+		log(validInput ? "request is valid" : "request is invalid");
+		if (validInput) {
+			log("going to decide whether new request or continuation");
+			if (isContinuation(address)) {
+				UssdAoRequestMessage result = handleContinuingRequests(address,
+						message, convId);
+				USSDResponse resp = new USSDResponse();
+				resp.setTransactionId(result.getConversationId());
+				resp.setTransactionTime(request.getTransactionTime());
+				resp.setUSSDResponseString(result.getMessage());
+
+				resp.setUSSDAction(result.getSessionTermination() ? ACTION.END
+						: ACTION.REQUEST);
+				return resp;
+			} else {
+				UssdAoRequestMessage result = initUserSession(address, convId);
+				USSDResponse resp = new USSDResponse();
+				resp.setTransactionId(result.getConversationId());
+				resp.setTransactionTime(request.getTransactionTime());
+				resp.setUSSDResponseString(result.getMessage());
+
+				resp.setUSSDAction(result.getSessionTermination() ? ACTION.END
+						: ACTION.REQUEST);
+				return resp;
+			}
+		}
+		return null;
+	}
+
 	/**
 	 * add session data to the session storage, probably based on a user
 	 * selection
@@ -165,7 +217,7 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 	public void addUserData(String address, String key, Object value) {
 		UssdUserSession sess = Application.userSessions.get(address);
 		sess.addData(key, value);
-		Application.userData = sess.getAllUserData();
+		// Application.userData = sess.getAllUserData();
 
 	}
 
@@ -192,6 +244,7 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 		UssdPrompt prompt = (UssdPrompt) sess.getCurrentNode();
 		// validate input data
 		boolean valid = prompt.setResponse(message);
+		log("does the prompt have children? " + prompt.hasChildren());
 
 		if (valid) {
 			// now get the response for processing
@@ -207,7 +260,7 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 			}
 			/*
 			 * the normal behaviour of a prompt is to be a session ender, like
-			 * askin for a pin to complete a transaction but sometimes, we have
+			 * asking for a pin to complete a transaction but sometimes, we have
 			 * to ask for a some data before authenticating with pin, for
 			 * example cash amount, then pin, so prompt particularly involves
 			 * non multiple choice selections but rather user conceived input
@@ -218,6 +271,7 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 			 * here, we first handle a normal prompt item
 			 */
 			if (prompt.hasChildren() && !prompt.isMultiSelect()) {
+				log("found the prompt: " + prompt.getName() + "has children");
 				return handleChildBearingNode(prompt.getChild(), address,
 						convId);
 				/*
@@ -230,6 +284,7 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 				return handleChildBearingNode(prompt.getMultiSelectChild(),
 						address, convId);
 			else {
+				log("this is a childless node, gonna process as such");
 				return handleChildlessNode(address, convId);
 			}
 		} else {
@@ -311,7 +366,7 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 			String name = node.getNameFromIndex(Application.toInt(items[i]));
 			// get the UssdNode object mapped to this id/name of selected index,
 			// remember, this is not for purposes of sending
-			// a new menu but rather to get its secondary data incase the node
+			// a new menu but rather to get its secondary data in case the node
 			// specifies so.
 			// ordinarily we save the name of the selected node as value for
 			// current node, but sometimes a node specifies
@@ -356,7 +411,14 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 			String convId) {
 		UssdUserSession sess = Application.userSessions.get(address);
 		UssdNode node = sess.getCurrentNode();
-		String resp = node.processNodeEndEvent(sess.getAllUserData());
+		String resp = null;
+		if (node instanceof UssdPrompt) {
+			UssdPrompt prompt = (UssdPrompt) node;
+			log("current childless nod is: " + prompt.getName());
+			resp = prompt.processNodeEndEvent(sess.getAllUserData());
+		} else
+			resp = node.processNodeEndEvent(sess.getAllUserData());
+		log("returning user data=" + resp);
 		return endSession(resp, address, convId);
 	}
 
@@ -373,6 +435,7 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 	 */
 	public UssdAoRequestMessage handleChildBearingNode(String newNode,
 			String address, String convId) {
+		log("processing child: " + newNode);
 		Application.userSessions.get(address).changeNode(newNode);
 		UssdUserSession sess = Application.userSessions.get(address);
 		String display = sess.fetchDisplay();
@@ -381,7 +444,7 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 	}
 
 	/**
-	 * this method is called everytime a non-session-end message is received
+	 * this method is called every time a non-session-end message is received
 	 * from the client
 	 * 
 	 * @param address
@@ -393,14 +456,19 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 	 */
 	public UssdAoRequestMessage handleContinuingRequests(String address,
 			String message, String convId) {
+		log("handling continuing request");
 		UssdUserSession sess = Application.userSessions.get(address);
 		if (sess.isPrompt()) {
+			log("this is a prompt");
 			return handleLeafNodeEvents(address, message, convId);
 			// return;
 		} else {
+			log("this is a node");
 			String currentName = sess.getCurrentNode().getName();
+			log("current node name: " + currentName);
 			String selectedNode = sess.getCurrentNode().getNameFromIndex(
 					Application.toInt(message));
+			log("selected node is: " + selectedNode);
 
 			if (Application.isCommand(selectedNode)) {
 				String[] tokens = selectedNode.split("_");
@@ -411,13 +479,32 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 				}
 
 			} else {
+				log("adding user data for: " + currentName);
 				addUserData(address, currentName, selectedNode);
-				if (sess.getCurrentNode().hasChildren()) {
-					return handleChildBearingNode(selectedNode, address, convId);
-				} else {
+				log("system current node is: "
+						+ sess.getCurrentNode().getName());
+				UssdNode newNode = sess.getMyTree().getNode(selectedNode);
+				if (newNode instanceof UssdPrompt) {
+					if (sess.getCurrentNode().hasChildren()) {
+						// if (newNode.hasChildren()) {
+						return handleChildBearingNode(selectedNode, address,
+								convId);
+					} else {
 
-					return handleChildlessNode(address, convId);
+						// sess.setCurrentNode(newNode);
+						return handleChildlessNode(address, convId);
+					}
+				} else {
+					if (newNode.hasChildren()) {
+						return handleChildBearingNode(selectedNode, address,
+								convId);
+					} else {
+
+						sess.setCurrentNode(newNode);
+						return handleChildlessNode(address, convId);
+					}
 				}
+
 			}
 			return null;
 		}
@@ -611,11 +698,11 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 	public void onSessionTerminate(MchoiceUssdTerminateMessage arg0) {
 		String address = arg0.getAddress();
 		String convId = arg0.getConversationId();
-		// log("terminatio message received");
-		// log("Address of request " + address);
-		// log("Conversation id" + convId);
-		// log("Correlation id " + arg0.getCorrelationId());
-		// log("Termination version " + arg0.getVersion());
+		log("terminatio message received");
+		log("Address of request " + address);
+		log("Conversation id" + convId);
+		log("Correlation id " + arg0.getCorrelationId());
+		log("Termination version " + arg0.getVersion());
 		endSession(
 				"Dear customer, the session ended, you took too long to respond...please start another session",
 				address, convId);
