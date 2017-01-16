@@ -3,6 +3,7 @@ package com.egimaben.ussd;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,7 +17,7 @@ import org.slf4j.LoggerFactory;
 public class UssdNode {
 	private String name;
 	private String title;
-	private String displayedTitle=null;
+	private String displayedTitle = null;
 	private String parent;
 	private String address;
 	private String childrenAlias = null;
@@ -25,20 +26,35 @@ public class UssdNode {
 	private int myBufferLimit = 0;
 	private boolean allowDuplicate;
 	private String id;
-	
+
+	private int index = 0;
+	private List<String> children = new ArrayList<>();
+	private String multiSelectChild = null;
+
 	public String getId() {
 		return id;
 	}
+
 	public void setId(String id) {
 		this.id = id;
 	}
 
-	private HashMap<String,Object> extraData=new HashMap<>();
-	public void addExtraData(String key,Object value){
+	private HashMap<String, Object> extraData = new HashMap<>();
+
+	public void addExtraData(String key, Object value) {
 		extraData.put(key, value);
 	}
-	public Object getExtraData(String key){
+
+	public Object getExtraData(String key) {
 		return extraData.get(key);
+	}
+
+	public boolean kill(Map<String, Object> userData) {
+		return false;
+	}
+
+	public String getKillMessage() {
+		return Error.KILL_MESSAGE;
 	}
 
 	public boolean allowsDuplicate() {
@@ -109,10 +125,6 @@ public class UssdNode {
 		this.address = address;
 	}
 
-	private int index = 0;
-	private List<String> children = new ArrayList<>();
-	private String multiSelectChild = null;
-
 	public String getMultiSelectChild() {
 		return multiSelectChild;
 	}
@@ -146,7 +158,7 @@ public class UssdNode {
 			.getLogger(UssdNode.class);
 
 	public void log(String str) {
-		LOGGER.info( str);
+		LOGGER.info(str);
 	}
 
 	/**
@@ -272,7 +284,7 @@ public class UssdNode {
 	 * @return
 	 */
 	public String processNodeEndEvent(HashMap<String, Object> userData) {
-		return "Thank you, good bye";
+		return Error.NODE_END_EVENT_MESSAGE;
 	}
 
 	/**
@@ -307,25 +319,26 @@ public class UssdNode {
 	public void releaseObject() {
 		setIndex(0);
 	}
-	
 
 	public String getDisplayedTitle() {
 		return displayedTitle;
 	}
+
 	public void setDisplayedTitle(String displayedTitle) {
 		this.displayedTitle = displayedTitle;
 	}
+
 	@Override
 	public String toString() {
 		String objectString = null;
 
 		String[] items = getMenu();
-		
-		log("number of children for this node: "+items.length);
+
+		log("number of children for this node: " + items.length);
 		int bufferLimit = (items.length == 0) ? 1 : getBufferLimit() + 1;
 
 		do {
-			log("doing recurseMenu with: "+objectString);
+			log("doing recurseMenu with: " + objectString);
 			bufferLimit -= 1;
 			objectString = recurseMenu(items, bufferLimit);
 		} while (objectString.length() > Application.USSD_CHAR_LIMIT);
@@ -334,26 +347,29 @@ public class UssdNode {
 	}
 
 	public String recurseMenu(String[] items, int bufferLimit) {
-		String objectString = (displayedTitle==null)?getTitlePrefix() + getTitle() + getTitleSuffix():getDisplayedTitle();
+		String objectString = (displayedTitle == null) ? getTitlePrefix()
+				+ getTitle() + getTitleSuffix() : getDisplayedTitle();
 		boolean lastMenu = false;
 		if (items.length > 0) {
 			for (int i = index; i < bufferLimit; i++) {
 				String item = items[i];
 				int num = i + 1;
-				log("getting node for address: "+getAddress());
-				UssdNode node=Application.userSessions.get(getAddress()).getMyTree().getNode(item);
+				log("getting node for address: " + getAddress());
+				UssdNode node = Application.userSessions.get(getAddress())
+						.getMyTree().getNode(item);
 				log("node got");
-				String title=node.getTitle();
-				log("title="+title);
-				objectString += Application.SEP + num + "."
-						+ title;
-				log("object string="+objectString);
+				String title = node.getTitle();
+				log("title=" + title);
+				objectString += Application.SEP + num + "." + title;
+				log("object string=" + objectString);
 			}
 			log("out of for loop");
-		}
-		else objectString+=Application.SEP+Application.SEP+"NO DATA AVAILABLE, TRY AGAIN LATER"+Application.SEP;
+		} else
+			objectString += Application.SEP + Application.SEP
+					+ Error.MISSING_NODES_MESSAGE + Application.SEP;
 		lastMenu = bufferLimit == items.length;
-		objectString += Application.SEP + "0.Exit";
+		if (Application.ENABLE_EXIT)
+			objectString += Application.SEP + "0.Exit";
 		if (!getParent().equals("0")) {
 			objectString += Application.SEP + "#.Back";
 			if (!lastMenu)
@@ -364,9 +380,9 @@ public class UssdNode {
 
 		}
 		log("going to replace title vars");
-		
-		String vars = Application.replaceTitleVars(objectString,getAddress());
-		log("finished replacing="+vars);
+
+		String vars = Application.replaceTitleVars(objectString, getAddress());
+		log("finished replacing=" + vars);
 		return vars;
 	}
 
@@ -383,7 +399,7 @@ public class UssdNode {
 		 */
 		int margin = len - index;
 		/*
-		 * 
+		 * limit is how many items are allowed on screen
 		 */
 		int limit = getMyBufferLimit() > 0 ? getMyBufferLimit()
 				: Application.bufferLimit;

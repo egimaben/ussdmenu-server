@@ -14,6 +14,13 @@ import org.slf4j.LoggerFactory;
  * 
  */
 public class UssdTree implements Cloneable {
+	private String address = null;
+
+	HashMap<String, UssdNode> treeMenu = new HashMap<>();
+	private boolean ready = false;
+	private static final Logger LOGGER = LoggerFactory
+			.getLogger(UssdTree.class);
+
 	public boolean isReady() {
 		return ready;
 	}
@@ -22,21 +29,15 @@ public class UssdTree implements Cloneable {
 		this.ready = ready;
 	}
 
-	private String notReadyMessage = "Application not ready, try again later";
-	private String address = null;
 
 	public String getNotReadyMessage() {
-		return notReadyMessage;
+		return Error.APP_NOT_READY_MESSAGE;
 	}
 
 	public void setNotReadyMessage(String notReadyMessage) {
-		this.notReadyMessage = notReadyMessage;
+		Error.APP_NOT_READY_MESSAGE = notReadyMessage;
 	}
 
-	HashMap<String, UssdNode> treeMenu = new HashMap<>();
-	private boolean ready = false;
-	private static final Logger LOGGER = LoggerFactory
-			.getLogger(UssdTree.class);
 
 	public void log(String str) {
 		LOGGER.info(str);
@@ -70,14 +71,8 @@ public class UssdTree implements Cloneable {
 		for (UssdNode node : nodes) {
 			node.setAddress(address);
 			treeMenu.put(node.getName(), node);
-			log("adding node:"+node.getName());
 			String parent = node.getParent();
-			log("parent is:"+parent);
-			log("checking if this parent is already in the system");
-			log("parents in the system:"+treeMenu.keySet());
-			if (treeMenu.containsKey(parent)){
-				log("yes got parent in the system, adding child to parent");
-				
+			if (treeMenu.containsKey(parent)){				
 				treeMenu.get(parent).addChild(node.getName());
 				}
 		}
@@ -91,11 +86,8 @@ public class UssdTree implements Cloneable {
 	 * @return
 	 */
 	public UssdNode getNode(String name) {
-		log("getting node named: "+name);
-		log("menu tree keys: "+treeMenu.keySet());
 		UssdNode node = treeMenu.get(name);
 		node.releaseObject();
-		log("returning node");
 		return node;
 	}
 

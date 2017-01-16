@@ -17,11 +17,13 @@ public class Application {
 	public static String CLIENT_URL = "http://127.0.0.1:8000/ussd/";
 	public static String APP_ID = "appid";
 	public static String DELIM = ",";
+	public static final String MSISDN="-msisdn-";
 	public static final int USSD_CHAR_LIMIT = 160;
 	public static final String SEP = System.getProperty("line.separator");
 	public static String APP_PASSWORD = "password";
 	public static HashMap<String, UssdUserSession> userSessions = new HashMap<>();
 	public static Map<String, Double> ODDS = new HashMap<>();
+	public static boolean ENABLE_EXIT=false;
 	private static final Logger LOGGER = LoggerFactory
 			.getLogger(Application.class);
 
@@ -257,5 +259,6 @@ public class Application {
 		arr = result.toArray(new String[1]);
 		return arr;
 	}
+
 
 }

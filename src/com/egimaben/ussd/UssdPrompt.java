@@ -1,5 +1,6 @@
 package com.egimaben.ussd;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -42,15 +43,18 @@ public abstract class UssdPrompt extends UssdNode {
 	 * @return
 	 */
 	public boolean setResponse(Object response) {
-		if (validate(response)) {
+		// get client's address
+		String address = getAddress();
+		// use address to get his session object
+		
+		UssdUserSession sess = Application.userSessions.get(address);
+		// defensively copy session data into a new map
+		Map<String, Object> userData = Collections.unmodifiableMap(sess.getAllUserData());
+		if (validate(response,userData)) {
 			// first copy this response to the local variable
 			this.response = response;
-			// get client's address
-			String address = getAddress();
-			// use address to get his session object
-			UssdUserSession sess = Application.userSessions.get(address);
-			// defensively copy session data into a new map
-			Map<String, Object> userData = new HashMap<>(sess.getAllUserData());
+
+
 			// give API client existing user data and current response so he can
 			// create his k,v pairs
 			Map<String, Object> newValues = updateDataState(userData, response);
@@ -60,7 +64,6 @@ public abstract class UssdPrompt extends UssdNode {
 					if (!userData.containsKey(key))
 						sess.addData(key, newValues.get(key));
 			// update defensive copies
-			userData = new HashMap<>(sess.getAllUserData());
 			response = this.response;
 			// give API client freedom to create dynamic nodes that take effect
 			// after this prompt exits
@@ -117,7 +120,7 @@ public abstract class UssdPrompt extends UssdNode {
 	 * @param data
 	 * @return
 	 */
-	public abstract boolean validate(Object data);
+	public abstract boolean validate(Object data,Map<String,Object> userData);
 
 	/**
 	 * a method called to allow for predetermined modifications to user input
@@ -128,8 +131,8 @@ public abstract class UssdPrompt extends UssdNode {
 	 * the programmer incase they are needed to compute new values for storage.
 	 * It's recommended that the programmer create a new map to return and only
 	 * use the <code>userData</code> as a reference for computing new values.<br />
-	 * This is strictly for performance reasons as the returned map will be
-	 * checked key for key to get any new keys. Only data that was previously
+	 * Any attempt to modify <code>userData</code> will throw <code>UnsupportedOperationExceptions</code>. 
+	 * Only data that was previously
 	 * absent in the existing storage will be saved, already existing keys will
 	 * not be updated. So it is best practice to create a new map and only add
 	 * to it new keys.
@@ -194,7 +197,7 @@ public abstract class UssdPrompt extends UssdNode {
 	 */
 
 	public String generateSessionEndMessage(HashMap<String, Object> allUserData) {
-		return "session ended";
+		return Error.SESSION_END_MESSAGE;
 	}
 
 }

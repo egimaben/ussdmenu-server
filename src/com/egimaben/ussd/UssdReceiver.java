@@ -1,16 +1,11 @@
 package com.egimaben.ussd;
 
-import hms.sdp.ussd.MchoiceUssdException;
-import hms.sdp.ussd.MchoiceUssdMessage;
-import hms.sdp.ussd.MchoiceUssdTerminateMessage;
-import hms.sdp.ussd.client.MchoiceUssdReceiver;
-import hms.sdp.ussd.client.MchoiceUssdSender;
-import hms.sdp.ussd.impl.UssdAoRequestMessage;
-
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 import javax.servlet.ServletException;
 
@@ -20,6 +15,13 @@ import org.slf4j.LoggerFactory;
 import com.egimaben.ussd.dto.USSDRequest;
 import com.egimaben.ussd.dto.USSDResponse;
 import com.egimaben.ussd.dto.USSDResponse.ACTION;
+
+import hms.sdp.ussd.MchoiceUssdException;
+import hms.sdp.ussd.MchoiceUssdMessage;
+import hms.sdp.ussd.MchoiceUssdTerminateMessage;
+import hms.sdp.ussd.client.MchoiceUssdReceiver;
+import hms.sdp.ussd.client.MchoiceUssdSender;
+import hms.sdp.ussd.impl.UssdAoRequestMessage;
 
 /**
  * an abstract servlet class to receive client requests, process them and return
@@ -89,6 +91,10 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 	 * @return
 	 */
 	public abstract String getAppShortCode();
+	/**
+	 * Enables the 'exit' menu item attached to 0. By default, exit is not enabled.
+	 */
+	public abstract boolean isExitEnabled();
 
 	/**
 	 * method that initiates all data for the application
@@ -117,6 +123,9 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 				Application.ussdCode = shortCode;
 			ussdSender = new MchoiceUssdSender(Application.CLIENT_URL,
 					Application.APP_ID, Application.APP_PASSWORD);
+			if(isExitEnabled()){
+				Application.ENABLE_EXIT=true;
+			}
 		} catch (MchoiceUssdException e) {
 			e.printStackTrace();
 		}
@@ -440,7 +449,6 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 		UssdUserSession sess = Application.userSessions.get(address);
 		String display = sess.fetchDisplay();
 		return sendMessage(display, address, convId, false);
-
 	}
 
 	/**
@@ -484,6 +492,11 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 				log("system current node is: "
 						+ sess.getCurrentNode().getName());
 				UssdNode newNode = sess.getMyTree().getNode(selectedNode);
+				Map<String, Object> userData = Collections.unmodifiableMap(sess
+						.getAllUserData());
+				if (newNode.kill(userData)) {
+					return endSession(newNode.getKillMessage(), address, convId);
+				}
 				if (newNode instanceof UssdPrompt) {
 					if (sess.getCurrentNode().hasChildren()) {
 						// if (newNode.hasChildren()) {
@@ -524,6 +537,7 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 		myTree = getUssdTree(address);
 		if (myTree.isReady()) {
 			sess.initUser(myTree);
+			sess.addData(Application.MSISDN, address);
 			Application.userSessions.put(address, sess);
 			return sendMessage(sess.fetchDisplay(), address, convId, false);
 		} else
@@ -560,13 +574,16 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 		// if continuing and
 		if (!isContinuation(address) && !Application.isUssdCode(message)) {
 
-			return endSession("Invalid shortcode", address, convId);
+			return endSession(Error.INVALID_SHORCODE_ERROR, address, convId);
 		}
 		if (!isContinuation(address) && notAppShortCode(message)) {
-			return endSession("Unknown application:" + message, address, convId);
+			return endSession(Error.UNKNOWN_APPLICATION_ERROR + ":" + message,
+					address, convId);
 		}
 		if (message.equals("0")) {
-			return endSession("Thank you,good bye", address, convId);
+			if(Application.ENABLE_EXIT)
+			return endSession(Error.USER_EXIT_MESSAGE, address, convId);
+			else return endSession(Error.EXIT_NOT_ENABLED_MESSAGE, address, convId);
 		}
 		// pagination command, fetch the next page
 		if (message.equals("00")) {
@@ -581,7 +598,7 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 		}
 		if (isContinuation(address)) {
 			if (Application.isUssdCode(message)) {
-				return endSession("expecting integer not shortcode", address,
+				return endSession(Error.MIDSESSION_SHORTCODE_INPUT, address,
 						convId);
 			}
 			if (!isControlSignal(message)
@@ -592,15 +609,16 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 				if (in < 0
 						|| in > Application.userSessions.get(address)
 								.getCurrentNode().getMenu().length) {
-					return endSession("Invalid integer input", address, convId);
+					return endSession(
+							Error.NON_INTEGER_INPUT_ON_MENUITEM_ERROR, address,
+							convId);
 				}
 			}
 			if (Application.userSessions.get(address).getCurrentNode()
 					.isMultiSelect()
 					&& !validMultiSelect(message)) {
-				return endSession(
-						"invalid multiple input, separate inputs using "
-								+ Application.DELIM, address, convId);
+				return endSession(Error.INVALID_MULTIPLE_INPUT_ERROR, address,
+						convId);
 			}
 		}
 
@@ -670,7 +688,7 @@ public abstract class UssdReceiver extends MchoiceUssdReceiver {
 		UssdAoRequestMessage resp = new UssdAoRequestMessage();
 		resp.setAddress(address);
 		resp.setConversationId(convId);
-		resp.setMessage(message == null ? "Invalid input, try again" : message);
+		resp.setMessage(message == null ? Error.INPUT_CHANGE_REQUEST : message);
 		resp.setSessionTermination(false);
 		return resp;
 
